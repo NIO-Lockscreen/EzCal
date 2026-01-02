@@ -1,0 +1,2 @@
+# EzCal
+simple calorie tracker
