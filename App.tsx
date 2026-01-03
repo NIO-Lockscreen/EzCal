@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { LogEntry, Settings, Preset } from './types';
 import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark } from './components/Icons';
 import ProgressRing from './components/ProgressRing';
 import SettingsModal from './components/SettingsModal';
 import PresetsModal from './components/PresetsModal';
 import SavePresetModal from './components/SavePresetModal';
+import NameModal from './components/NameModal';
 import ConfirmModal from './components/ConfirmModal';
 import CalendarModal from './components/CalendarModal';
 import Confetti from './components/Confetti';
@@ -24,7 +25,8 @@ const getDisplayDate = (date: Date) => {
 
 const DEFAULT_SETTINGS: Settings = { 
     goals: { cal: 2000, pro: 150 },
-    mode: 'both' 
+    mode: 'both',
+    name: ''
 };
 
 function App() {
@@ -38,13 +40,22 @@ function App() {
     const [inputCal, setInputCal] = useState('');
     const [inputPro, setInputPro] = useState('');
 
+    // UI Toggle State
+    const [statsPeriod, setStatsPeriod] = useState<'weekly' | 'monthly'>('weekly');
+    const [showStatusText, setShowStatusText] = useState(false);
+    const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Modals & UI State
     const [showSettings, setShowSettings] = useState(false);
     const [showPresets, setShowPresets] = useState(false);
     const [showSaveModal, setShowSaveModal] = useState(false);
+    const [showNameModal, setShowNameModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showCalendar, setShowCalendar] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
+    
+    // Logic State
+    const [hasCelebrated, setHasCelebrated] = useState(false);
     
     // Staging Data
     const [entryToSave, setEntryToSave] = useState<LogEntry | null>(null);
@@ -77,9 +88,19 @@ function App() {
         }));
     }, [history, settings, presets]);
 
+    // --- Check if goal met on load to prevent duplicate celebration ---
+    useEffect(() => {
+        const dateKey = formatDateKey(new Date());
+        const todaysLogs = history.filter(h => h.date === dateKey);
+        const totalPro = todaysLogs.reduce((sum, item) => sum + item.pro, 0);
+        
+        if (totalPro >= settings.goals.pro && settings.goals.pro > 0) {
+            setHasCelebrated(true);
+        }
+    }, [history.length]); // Simple check on mount/load
+
     // --- Derived Data ---
     const dateKey = formatDateKey(currentDate);
-    // Fix: Ensure "isToday" comparison uses local string generation
     const isToday = dateKey === formatDateKey(new Date());
 
     const todaysLogs = useMemo(() => {
@@ -93,15 +114,43 @@ function App() {
         }), { cal: 0, pro: 0 });
     }, [todaysLogs]);
 
-    const weeklyAvg = useMemo(() => {
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        const weekKey = oneWeekAgo.getTime();
+    const periodStats = useMemo(() => {
+        let startStr: string;
+        let endStr: string;
+
+        // Clone current date to avoid mutation issues
+        const curr = new Date(currentDate);
+
+        if (statsPeriod === 'weekly') {
+            // Monday - Sunday logic
+            const day = curr.getDay(); // 0 is Sunday
+            const dayAdjusted = day === 0 ? 7 : day; // Convert to 1 (Mon) - 7 (Sun)
+            const diff = curr.getDate() - dayAdjusted + 1; // Calculate Monday
+            
+            const startOfWeek = new Date(curr);
+            startOfWeek.setDate(diff);
+            
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 6); // End on Sunday
+
+            startStr = formatDateKey(startOfWeek);
+            endStr = formatDateKey(endOfWeek);
+        } else {
+            // Get Month (Calendar Month)
+            const startOfMonth = new Date(curr.getFullYear(), curr.getMonth(), 1);
+            const endOfMonth = new Date(curr.getFullYear(), curr.getMonth() + 1, 0); // Last day of month
+
+            startStr = formatDateKey(startOfMonth);
+            endStr = formatDateKey(endOfMonth);
+        }
+
+        // Filter history based on range strings (inclusive)
+        const relevantLogs = history.filter(h => h.date >= startStr && h.date <= endStr);
         
-        const relevant = history.filter(h => h.ts > weekKey);
+        // Group by day to calculate average daily intake
         const daysMap: Record<string, {cal: number, pro: number}> = {};
         
-        relevant.forEach(h => {
+        relevantLogs.forEach(h => {
             if (!daysMap[h.date]) daysMap[h.date] = { cal: 0, pro: 0 };
             daysMap[h.date].cal += h.cal;
             daysMap[h.date].pro += h.pro;
@@ -114,9 +163,54 @@ function App() {
             cal: Math.round(total.cal / daysLogged),
             pro: Math.round(total.pro / daysLogged)
         };
-    }, [history]);
+    }, [history, statsPeriod, currentDate]); // Added currentDate dependency
+
+    const getStatusMessage = (avgCal: number, goalCal: number) => {
+        const diff = avgCal - goalCal; // Positive means OVER goal, Negative means UNDER goal
+        
+        // "200 cals under goal" -> diff <= -200
+        if (diff <= -200) return "Eat some more?";
+        
+        // "199 under to 100 over" -> -199 <= diff <= 100
+        if (diff > -200 && diff <= 100) return "On track ❤️";
+        
+        // "101 over til 300 over" -> 101 <= diff <= 300
+        if (diff > 100 && diff <= 300) return "Slowly losing weight";
+        
+        // "301 over to 600 over" -> 301 <= diff <= 600
+        if (diff > 300 && diff <= 600) return "Maintaining weight";
+        
+        // "over 601" -> diff >= 601
+        if (diff > 600) return "Gaining weight";
+
+        return "";
+    };
+
+    const statusMessage = useMemo(() => {
+        if (!settings.goals.cal) return "";
+        return getStatusMessage(periodStats.cal, settings.goals.cal);
+    }, [periodStats.cal, settings.goals.cal]);
+
 
     // --- Actions ---
+    const handleToggleStats = () => {
+        setStatsPeriod(prev => prev === 'weekly' ? 'monthly' : 'weekly');
+        
+        // Reset and start timer for text visibility
+        setShowStatusText(true);
+        if (statusTimerRef.current) {
+            clearTimeout(statusTimerRef.current);
+        }
+        statusTimerRef.current = setTimeout(() => {
+            setShowStatusText(false);
+        }, 10000); // 10 seconds
+    };
+
+    // Use callback for confetti to prevent re-creation on render, which triggers useEffect cleanup/restart
+    const handleConfettiComplete = useCallback(() => {
+        setShowConfetti(false);
+    }, []);
+
     const handleAdd = (c?: number, p?: number, label?: string) => {
         const cVal = c !== undefined ? c : parseInt(inputCal);
         const pVal = p !== undefined ? p : parseInt(inputPro);
@@ -130,9 +224,12 @@ function App() {
         if (isToday) {
             const currentPro = stats.pro;
             const goalPro = settings.goals.pro;
+            
             // Celebration Trigger: previously under goal, now met/exceeded
-            if (currentPro < goalPro && (currentPro + cleanPro) >= goalPro) {
+            // AND ensure we haven't already celebrated this session/day logic
+            if (!hasCelebrated && currentPro < goalPro && (currentPro + cleanPro) >= goalPro) {
                 setShowConfetti(true);
+                setHasCelebrated(true);
             }
         }
 
@@ -209,19 +306,37 @@ function App() {
         setShowCalendar(false);
     };
 
+    const handleNameSave = (name: string) => {
+        setSettings(prev => ({ ...prev, name }));
+    };
+
     // --- Render Helpers ---
     const showCal = settings.mode === 'both' || settings.mode === 'cal';
     const showPro = settings.mode === 'both' || settings.mode === 'pro';
 
+    // Calculation for text positioning based on mode
+    // If 'both' or 'pro' is active, we target the protein column location (~75% across for 'both', 50% across for 'pro')
+    const textPositionClass = settings.mode === 'both' 
+        ? 'left-[75%] -translate-x-1/2' 
+        : 'left-1/2 -translate-x-1/2';
+
     return (
-        <div className="min-h-screen pb-10 max-w-[480px] mx-auto px-5 pt-safe-top">
-            {showConfetti && <Confetti onComplete={() => setShowConfetti(false)} />}
+        <div className="min-h-screen pb-10 max-w-[480px] mx-auto px-5 pt-14">
+            {showConfetti && <Confetti onComplete={handleConfettiComplete} />}
             <InstallPrompt />
             
             {/* Header */}
             <header className="flex justify-between items-center py-6">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-gray-800">Hey! ✨</h1>
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-800 flex items-center gap-2">
+                        Hey! {settings.name} 
+                        <button 
+                            onClick={() => setShowNameModal(true)}
+                            className="hover:scale-110 transition-transform active:scale-90"
+                        >
+                            ✨
+                        </button>
+                    </h1>
                     <div className="flex items-center gap-2 mt-1 text-gray-500 text-sm font-medium">
                         <button onClick={() => changeDate(-1)} className="p-1 hover:bg-gray-200 rounded-full transition">
                             <ChevronLeft className="w-4 h-4" />
@@ -251,22 +366,37 @@ function App() {
                 </button>
             </header>
 
-            {/* Weekly Stats */}
-            <div className="bg-white/60 backdrop-blur-xl rounded-[32px] p-6 shadow-sm border border-white/50 mb-6 animate-pop-in">
-                <div className="inline-block px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs font-bold mb-4 shadow-md shadow-indigo-500/20">
-                    WEEKLY AVERAGE
+            {/* Stats Card */}
+            <div className="bg-white/60 backdrop-blur-xl rounded-[32px] p-6 shadow-sm border border-white/50 mb-6 animate-pop-in relative">
+                <div className="flex items-center justify-between mb-4 relative min-h-[32px]">
+                    <button 
+                        onClick={handleToggleStats}
+                        className="px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs font-bold shadow-md shadow-indigo-500/20 hover:opacity-90 transition-opacity uppercase tracking-wide z-10"
+                    >
+                        {statsPeriod} AVERAGE
+                    </button>
+                    
+                    {/* Status Text - Centered over Protein (or center of card if single mode) */}
+                    {statusMessage && (
+                        <span 
+                            className={`text-xs font-bold text-gray-500 transition-opacity duration-1000 absolute ${textPositionClass} top-1/2 -translate-y-1/2 whitespace-nowrap ${showStatusText ? 'opacity-100' : 'opacity-0'}`}
+                        >
+                            {statusMessage}
+                        </span>
+                    )}
                 </div>
+                
                 <div className={`flex justify-around items-center ${!showCal || !showPro ? 'justify-center' : ''}`}>
                     {showCal && (
                         <div className="text-center min-w-[80px]">
-                            <span className="block text-3xl font-black text-gray-800">{weeklyAvg.cal}</span>
+                            <span className="block text-3xl font-black text-gray-800">{periodStats.cal}</span>
                             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Kcal</span>
                         </div>
                     )}
                     {showCal && showPro && <div className="w-px h-10 bg-gray-200"></div>}
                     {showPro && (
                         <div className="text-center min-w-[80px]">
-                            <span className="block text-3xl font-black text-protein">{weeklyAvg.pro}</span>
+                            <span className="block text-3xl font-black text-protein">{periodStats.pro}</span>
                             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Protein</span>
                         </div>
                     )}
@@ -412,6 +542,13 @@ function App() {
                 isOpen={showSaveModal}
                 onClose={() => setShowSaveModal(false)}
                 onSave={finalizeSavePreset}
+            />
+
+            <NameModal 
+                isOpen={showNameModal}
+                onClose={() => setShowNameModal(false)}
+                currentName={settings.name || ''}
+                onSave={handleNameSave}
             />
 
             <ConfirmModal

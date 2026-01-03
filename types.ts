@@ -17,6 +17,7 @@ export interface Goals {
 export interface Settings {
     goals: Goals;
     mode: TrackingMode;
+    name?: string;
 }
 
 export interface Preset {

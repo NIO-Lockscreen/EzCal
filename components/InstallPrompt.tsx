@@ -43,7 +43,7 @@ const InstallPrompt = () => {
 
                 <div className="flex gap-4 items-start">
                     <div className="bg-gradient-to-br from-accent to-yellow-400 w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg shrink-0 text-white font-bold text-xl">
-                        SP
+                        SC
                     </div>
                     <div>
                         <h3 className="font-bold text-gray-800 text-lg">Install SimplyCal</h3>

@@ -78,11 +78,11 @@ const ProgressRing: React.FC<ProgressRingProps> = ({ radius, stroke, progress, t
                     className="transition-[stroke-dashoffset] duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                 />
             </svg>
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center">
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center flex flex-col items-center justify-center">
                 <span className={`block text-xl font-black ${type === 'cal' ? 'text-orange-500' : 'text-indigo-600'}`}>
                     {label}
                 </span>
-                <span className="block text-xs font-bold text-gray-400 uppercase tracking-widest opacity-80">{subLabel}</span>
+                <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest opacity-80 mt-0.5">{subLabel}</span>
             </div>
         </div>
     );
