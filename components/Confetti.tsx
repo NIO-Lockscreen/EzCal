@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 
-const Confetti = () => {
+interface ConfettiProps {
+    onComplete?: () => void;
+}
+
+const Confetti: React.FC<ConfettiProps> = ({ onComplete }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -20,15 +24,16 @@ const Confetti = () => {
         // Theme colors: Accent (Orange), Protein (Purple), Gold, Blue
         const colors = ['#FF7E5F', '#764BA2', '#FBBF24', '#667EEA'];
         
-        const particles: any[] = [];
         const particleCount = 150;
+        // Store particles
+        const particles: any[] = [];
 
         for (let i = 0; i < particleCount; i++) {
             particles.push({
                 x: Math.random() * canvas.width,
                 y: Math.random() * canvas.height - canvas.height,
-                vx: Math.random() * 4 - 2,     // Horizontal velocity
-                vy: Math.random() * 5 + 3,     // Vertical velocity (falling speed)
+                vx: Math.random() * 4 - 2,     
+                vy: Math.random() * 5 + 3,     
                 color: colors[Math.floor(Math.random() * colors.length)],
                 size: Math.random() * 8 + 4,
                 rotation: Math.random() * 360,
@@ -38,20 +43,33 @@ const Confetti = () => {
         }
 
         let animationId: number;
+        let stopEmitting = false;
 
         const animate = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            let activeCount = 0;
+
             particles.forEach((p) => {
+                // If particle is way off screen and we are stopping, don't update/draw it to save resources
+                if (stopEmitting && p.y > canvas.height + 50) {
+                    return;
+                }
+                
+                activeCount++;
                 p.y += p.vy;
                 p.x += p.vx;
                 p.rotation += p.rotationSpeed;
 
-                // Reset if off screen
+                // Recycling Logic
                 if (p.y > canvas.height) {
-                    p.y = -20;
-                    p.x = Math.random() * canvas.width;
-                    p.vy = Math.random() * 5 + 3; // Randomize speed again
+                    if (!stopEmitting) {
+                        // Reset to top if we are still emitting
+                        p.y = -20;
+                        p.x = Math.random() * canvas.width;
+                        p.vy = Math.random() * 5 + 3; 
+                    }
+                    // If stopEmitting is true, we simply let it fall > height, and do nothing
                 }
 
                 ctx.save();
@@ -70,21 +88,32 @@ const Confetti = () => {
                 ctx.restore();
             });
 
-            animationId = requestAnimationFrame(animate);
+            if (stopEmitting && activeCount === 0) {
+                // All particles have fallen off screen
+                if (onComplete) onComplete();
+            } else {
+                animationId = requestAnimationFrame(animate);
+            }
         };
 
         animate();
 
+        // After 2.5 seconds, stop recycling particles (they will fall off screen one by one)
+        const stopTimer = setTimeout(() => {
+            stopEmitting = true;
+        }, 2500);
+
         return () => {
             cancelAnimationFrame(animationId);
             window.removeEventListener('resize', resize);
+            clearTimeout(stopTimer);
         };
-    }, []);
+    }, [onComplete]);
 
     return (
         <canvas 
             ref={canvasRef} 
-            className="fixed inset-0 pointer-events-none z-[100] animate-fade-in"
+            className="fixed inset-0 pointer-events-none z-[100]"
         />
     );
 };

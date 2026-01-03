@@ -8,6 +8,7 @@ import SavePresetModal from './components/SavePresetModal';
 import ConfirmModal from './components/ConfirmModal';
 import CalendarModal from './components/CalendarModal';
 import Confetti from './components/Confetti';
+import InstallPrompt from './components/InstallPrompt';
 
 // FIX: Use local time construction to prevent timezone shifting (UTC vs Local)
 const formatDateKey = (date: Date) => {
@@ -132,7 +133,6 @@ function App() {
             // Celebration Trigger: previously under goal, now met/exceeded
             if (currentPro < goalPro && (currentPro + cleanPro) >= goalPro) {
                 setShowConfetti(true);
-                setTimeout(() => setShowConfetti(false), 5000);
             }
         }
 
@@ -215,7 +215,8 @@ function App() {
 
     return (
         <div className="min-h-screen pb-10 max-w-[480px] mx-auto px-5 pt-safe-top">
-            {showConfetti && <Confetti />}
+            {showConfetti && <Confetti onComplete={() => setShowConfetti(false)} />}
+            <InstallPrompt />
             
             {/* Header */}
             <header className="flex justify-between items-center py-6">
