@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Settings, TrackingMode } from '../types';
-import { X, Calculator } from './Icons';
+import { Settings, TrackingMode, LogEntry, Preset, AppData } from '../types';
+import { X, Calculator, Download, Upload } from './Icons';
 import CalculatorModal from './CalculatorModal';
 
 interface SettingsModalProps {
@@ -8,9 +8,20 @@ interface SettingsModalProps {
     onClose: () => void;
     settings: Settings;
     onSave: (newSettings: Settings) => void;
+    history?: LogEntry[];
+    presets?: Preset[];
+    onImportData?: (data: AppData) => void;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onSave }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ 
+    isOpen, 
+    onClose, 
+    settings, 
+    onSave,
+    history = [],
+    presets = [],
+    onImportData
+}) => {
     const [cal, setCal] = useState(settings.goals.cal.toString());
     const [pro, setPro] = useState(settings.goals.pro.toString());
     const [mode, setMode] = useState<TrackingMode>(settings.mode);
@@ -35,10 +46,60 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
         setShowCalculator(false);
     };
 
+    const handleExport = () => {
+        const data: AppData = {
+            history,
+            presets,
+            settings: {
+                ...settings,
+                goals: { cal: parseInt(cal) || 2000, pro: parseInt(pro) || 150 },
+                mode: mode
+            }
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `simplycal_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const json = JSON.parse(event.target?.result as string);
+                // Basic validation
+                if (json && (json.history || json.settings || json.presets)) {
+                    if (window.confirm("Importing this data will overwrite your current history, settings, and presets. Are you sure?")) {
+                        if (onImportData) {
+                            onImportData(json as AppData);
+                            onClose();
+                            alert("Data imported successfully!");
+                        }
+                    }
+                } else {
+                    alert("Invalid backup file format.");
+                }
+            } catch (err) {
+                alert("Failed to parse file.");
+            }
+            // Reset input so same file can be selected again if needed
+            e.target.value = '';
+        };
+        reader.readAsText(file);
+    };
+
     return (
         <>
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4">
-                <div className="bg-white/90 backdrop-blur-xl p-6 rounded-3xl shadow-2xl w-full max-w-sm animate-pop-in">
+                <div className="bg-white/90 backdrop-blur-xl p-6 rounded-3xl shadow-2xl w-full max-w-sm animate-pop-in max-h-[90vh] overflow-y-auto no-scrollbar">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-xl font-bold text-gray-800">Settings</h3>
                         <button onClick={onClose} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition">
@@ -104,6 +165,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
                                     />
                                 </div>
                             )}
+                        </div>
+
+                        {/* Data Management Section */}
+                        <div className="border-t border-gray-100 pt-6">
+                            <label className="block text-sm font-bold text-gray-800 mb-3">Data Management</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button 
+                                    onClick={handleExport}
+                                    className="flex flex-col items-center justify-center p-3 rounded-2xl bg-gray-50 hover:bg-gray-100 transition border border-transparent hover:border-gray-200"
+                                >
+                                    <div className="mb-2 p-2 bg-white rounded-full shadow-sm text-gray-700">
+                                        <Download className="w-4 h-4" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-600">Export</span>
+                                </button>
+                                
+                                <label className="flex flex-col items-center justify-center p-3 rounded-2xl bg-gray-50 hover:bg-gray-100 transition border border-transparent hover:border-gray-200 cursor-pointer">
+                                    <input 
+                                        type="file" 
+                                        accept=".json" 
+                                        className="hidden" 
+                                        onChange={handleImportFile}
+                                    />
+                                    <div className="mb-2 p-2 bg-white rounded-full shadow-sm text-gray-700">
+                                        <Upload className="w-4 h-4" />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-600">Import</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
 

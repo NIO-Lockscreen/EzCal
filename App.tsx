@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { LogEntry, Settings, Preset } from './types';
+import { LogEntry, Settings, Preset, AppData } from './types';
 import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark } from './components/Icons';
 import ProgressRing from './components/ProgressRing';
 import SettingsModal from './components/SettingsModal';
@@ -8,6 +8,7 @@ import SavePresetModal from './components/SavePresetModal';
 import NameModal from './components/NameModal';
 import ConfirmModal from './components/ConfirmModal';
 import CalendarModal from './components/CalendarModal';
+import BackupReminderModal from './components/BackupReminderModal';
 import Confetti from './components/Confetti';
 import InstallPrompt from './components/InstallPrompt';
 
@@ -35,6 +36,7 @@ function App() {
     const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
     const [presets, setPresets] = useState<Preset[]>([]);
     const [currentDate, setCurrentDate] = useState<Date>(new Date());
+    const [isDataLoaded, setIsDataLoaded] = useState(false);
     
     // Inputs
     const [inputCal, setInputCal] = useState('');
@@ -52,6 +54,7 @@ function App() {
     const [showNameModal, setShowNameModal] = useState(false);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showCalendar, setShowCalendar] = useState(false);
+    const [showBackupReminder, setShowBackupReminder] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
     
     // Logic State
@@ -78,15 +81,55 @@ function App() {
                 console.error("Failed to load data", e);
             }
         }
+        setIsDataLoaded(true);
     }, []);
 
     useEffect(() => {
+        if (!isDataLoaded) return;
         localStorage.setItem('glowTracker', JSON.stringify({ 
             history, 
             settings, 
             presets 
         }));
-    }, [history, settings, presets]);
+    }, [history, settings, presets, isDataLoaded]);
+
+    // --- Backup Reminder Logic ---
+    useEffect(() => {
+        if (!isDataLoaded || history.length === 0) return;
+
+        const checkBackup = () => {
+            const now = new Date();
+            
+            // 1. Check if it's the last day of the month
+            const tomorrow = new Date(now);
+            tomorrow.setDate(now.getDate() + 1);
+            // If tomorrow is the 1st, then today is the last day
+            if (tomorrow.getDate() !== 1) return;
+
+            // 2. Check if already shown this month
+            const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            const lastShown = localStorage.getItem('simplycal_backup_reminder_seen');
+            if (lastShown === currentMonthKey) return;
+
+            // 3. Check days since start (Minimum 20 days)
+            const sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
+            const firstEntry = sortedHistory[0];
+            
+            // Parse date manually to ensure local time comparison
+            const [y, m, d] = firstEntry.date.split('-').map(Number);
+            const startDate = new Date(y, m - 1, d);
+            
+            // Calculate difference in days
+            const diffTime = Math.abs(now.getTime() - startDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays >= 20) {
+                setShowBackupReminder(true);
+            }
+        };
+
+        checkBackup();
+    }, [isDataLoaded, history.length]);
 
     // --- Check if goal met on load to prevent duplicate celebration ---
     useEffect(() => {
@@ -310,6 +353,54 @@ function App() {
         setSettings(prev => ({ ...prev, name }));
     };
 
+    const handleImportData = (data: AppData) => {
+        if (data.history) setHistory(data.history);
+        if (data.presets) setPresets(data.presets);
+        if (data.settings) setSettings(data.settings);
+        
+        // Force save immediately to local storage to ensure persistence
+        localStorage.setItem('glowTracker', JSON.stringify(data));
+        
+        // Re-evaluate celebration state based on new data
+        const todays = data.history.filter(h => h.date === formatDateKey(new Date()));
+        const totalPro = todays.reduce((sum, item) => sum + item.pro, 0);
+        if (totalPro >= data.settings.goals.pro && data.settings.goals.pro > 0) {
+            setHasCelebrated(true);
+        } else {
+            setHasCelebrated(false);
+        }
+    };
+
+    // Helper for export to reuse logic
+    const exportData = () => {
+        const data: AppData = {
+            history,
+            presets,
+            settings
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `simplycal_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const markBackupSeen = () => {
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        localStorage.setItem('simplycal_backup_reminder_seen', currentMonthKey);
+        setShowBackupReminder(false);
+    };
+
+    const handleBackupConfirm = () => {
+        exportData();
+        markBackupSeen();
+    };
+
     // --- Render Helpers ---
     const showCal = settings.mode === 'both' || settings.mode === 'cal';
     const showPro = settings.mode === 'both' || settings.mode === 'pro';
@@ -317,7 +408,7 @@ function App() {
     // Calculation for text positioning based on mode
     // If 'both' or 'pro' is active, we target the protein column location (~75% across for 'both', 50% across for 'pro')
     const textPositionClass = settings.mode === 'both' 
-        ? 'left-[75%] -translate-x-1/2' 
+        ? 'left-[77%] -translate-x-1/2' 
         : 'left-1/2 -translate-x-1/2';
 
     return (
@@ -405,6 +496,7 @@ function App() {
 
             {/* Rings & Input */}
             <div className="bg-white/80 backdrop-blur-xl rounded-[32px] p-6 shadow-lg shadow-gray-200/50 mb-8 border border-white animate-pop-in [animation-delay:100ms]">
+                <h2 className="text-center text-gray-400 text-sm font-bold uppercase tracking-widest mb-6">Today</h2>
                 <div className={`grid gap-4 mb-8 ${settings.mode === 'both' ? 'grid-cols-2' : 'grid-cols-1 justify-items-center'}`}>
                     {showCal && (
                         <ProgressRing 
@@ -522,12 +614,20 @@ function App() {
                 </div>
             </div>
 
+            {/* Footer */}
+            <div className="text-center py-8 text-xs text-gray-400 font-medium">
+                Project by <a href="https://x.com/DiemetriX" target="_blank" rel="noopener noreferrer" className="hover:text-accent transition-colors">Thomas Davis</a>
+            </div>
+
             {/* Modals */}
             <SettingsModal 
                 isOpen={showSettings} 
                 onClose={() => setShowSettings(false)} 
                 settings={settings}
-                onSave={setSettings} 
+                onSave={setSettings}
+                history={history}
+                presets={presets}
+                onImportData={handleImportData}
             />
 
             <PresetsModal 
@@ -557,6 +657,12 @@ function App() {
                 onConfirm={confirmDelete}
                 title="Delete Entry?"
                 message="Are you sure you want to remove this logged meal? This action cannot be undone."
+            />
+
+            <BackupReminderModal
+                isOpen={showBackupReminder}
+                onClose={markBackupSeen}
+                onConfirm={handleBackupConfirm}
             />
 
             <CalendarModal

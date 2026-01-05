@@ -25,7 +25,13 @@ const CalendarModal: React.FC<CalendarModalProps> = ({ isOpen, onClose, currentD
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
 
-    const firstDayOfMonth = new Date(year, month, 1).getDay();
+    // Standard getDay() is 0 (Sun) to 6 (Sat)
+    // We want 0 (Mon) to 6 (Sun)
+    // Formula for Mon start: (day + 6) % 7. 
+    // Example: Sun(0) -> 6. Mon(1) -> 0.
+    const startDay = new Date(year, month, 1).getDay();
+    const firstDayOfMonth = (startDay === 0 ? 6 : startDay - 1); 
+
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const days = [];
@@ -103,9 +109,9 @@ const CalendarModal: React.FC<CalendarModalProps> = ({ isOpen, onClose, currentD
                     </button>
                 </div>
 
-                {/* Weekdays */}
+                {/* Weekdays - Monday Start */}
                 <div className="grid grid-cols-7 mb-2 text-center">
-                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                    {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(d => (
                         <div key={d} className="text-xs font-bold text-gray-400 py-2">
                             {d}
                         </div>
