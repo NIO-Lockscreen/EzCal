@@ -7,9 +7,10 @@ interface ProgressRingProps {
     type: 'cal' | 'pro';
     label: string;
     subLabel: string;
+    onClick?: () => void;
 }
 
-const ProgressRing: React.FC<ProgressRingProps> = ({ radius, stroke, progress, type, label, subLabel }) => {
+const ProgressRing: React.FC<ProgressRingProps> = ({ radius, stroke, progress, type, label, subLabel, onClick }) => {
     const normalizedRadius = radius - stroke * 2;
     const circumference = normalizedRadius * 2 * Math.PI;
     
@@ -21,7 +22,10 @@ const ProgressRing: React.FC<ProgressRingProps> = ({ radius, stroke, progress, t
     const glowColor = type === 'cal' ? 'rgba(255, 126, 95, 0.5)' : 'rgba(118, 75, 162, 0.5)';
 
     return (
-        <div className="relative flex flex-col items-center justify-center transition-all">
+        <div 
+            onClick={onClick}
+            className={`relative flex flex-col items-center justify-center transition-transform duration-300 ${onClick ? 'cursor-pointer hover:scale-105 active:scale-95' : ''}`}
+        >
             <svg
                 height={radius * 2}
                 width={radius * 2}

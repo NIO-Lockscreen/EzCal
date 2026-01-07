@@ -87,8 +87,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 } else {
                     alert("Invalid backup file format.");
                 }
-            } catch (err) {
-                alert("Failed to parse file.");
+            } catch (err: any) {
+                console.error(err);
+                alert("Failed to import: " + (err.message || "Unknown error"));
             }
             // Reset input so same file can be selected again if needed
             e.target.value = '';

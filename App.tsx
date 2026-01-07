@@ -12,6 +12,7 @@ import BackupReminderModal from './components/BackupReminderModal';
 import Confetti from './components/Confetti';
 import InstallPrompt from './components/InstallPrompt';
 import FoodCalculatorModal from './components/FoodCalculatorModal';
+import SuggestionModal from './components/SuggestionModal';
 
 // FIX: Use local time construction to prevent timezone shifting (UTC vs Local)
 const formatDateKey = (date: Date) => {
@@ -57,6 +58,7 @@ function App() {
     const [showCalendar, setShowCalendar] = useState(false);
     const [showBackupReminder, setShowBackupReminder] = useState(false);
     const [showFoodCalculator, setShowFoodCalculator] = useState(false);
+    const [showSuggestion, setShowSuggestion] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
     
     // Logic State
@@ -290,6 +292,31 @@ function App() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    const handleLogSuggestions = (items: Preset[]) => {
+        // Log all suggested items
+        const newEntries: LogEntry[] = items.map(item => ({
+            id: Date.now().toString() + Math.random().toString(),
+            date: dateKey,
+            ts: Date.now(),
+            cal: item.cal,
+            pro: item.pro,
+            label: item.label
+        }));
+
+        setHistory(prev => [...prev, ...newEntries]);
+        
+        // Check celebration for suggestions
+        if (isToday) {
+            const addedPro = items.reduce((sum, item) => sum + item.pro, 0);
+            const currentPro = stats.pro;
+            const goalPro = settings.goals.pro;
+            if (!hasCelebrated && currentPro < goalPro && (currentPro + addedPro) >= goalPro) {
+                setShowConfetti(true);
+                setHasCelebrated(true);
+            }
+        }
+    };
+
     const initiateDelete = (id: string) => {
         setEntryToDelete(id);
         setShowConfirmModal(true);
@@ -358,20 +385,52 @@ function App() {
     };
 
     const handleImportData = (data: AppData) => {
-        if (data.history) setHistory(data.history);
-        if (data.presets) setPresets(data.presets);
-        if (data.settings) setSettings(data.settings);
+        // Safe check for data integrity
+        if (!data || typeof data !== 'object') {
+            throw new Error("Invalid data format");
+        }
+
+        const newHistory = Array.isArray(data.history) ? data.history : history;
+        const newPresets = Array.isArray(data.presets) ? data.presets : presets;
         
-        // Force save immediately to local storage to ensure persistence
-        localStorage.setItem('glowTracker', JSON.stringify(data));
+        // Deep merge settings to avoid crashes if partial settings are imported
+        let newSettings = settings;
+        if (data.settings && typeof data.settings === 'object') {
+             newSettings = {
+                ...settings,
+                ...data.settings,
+                goals: {
+                    ...settings.goals,
+                    ...(data.settings.goals || {})
+                }
+            };
+        }
+
+        setHistory(newHistory);
+        setPresets(newPresets);
+        setSettings(newSettings);
+        
+        // Force save merged data immediately to local storage
+        localStorage.setItem('glowTracker', JSON.stringify({
+            history: newHistory,
+            presets: newPresets,
+            settings: newSettings
+        }));
         
         // Re-evaluate celebration state based on new data
-        const todays = data.history.filter(h => h.date === formatDateKey(new Date()));
-        const totalPro = todays.reduce((sum, item) => sum + item.pro, 0);
-        if (totalPro >= data.settings.goals.pro && data.settings.goals.pro > 0) {
-            setHasCelebrated(true);
-        } else {
-            setHasCelebrated(false);
+        try {
+            const todays = newHistory.filter(h => h.date === formatDateKey(new Date()));
+            const totalPro = todays.reduce((sum, item) => sum + item.pro, 0);
+            
+            if (newSettings.goals && newSettings.goals.pro > 0) {
+                if (totalPro >= newSettings.goals.pro) {
+                    setHasCelebrated(true);
+                } else {
+                    setHasCelebrated(false);
+                }
+            }
+        } catch (e) {
+            console.warn("Celebration check failed during import", e);
         }
     };
 
@@ -403,6 +462,17 @@ function App() {
     const handleBackupConfirm = () => {
         exportData();
         markBackupSeen();
+    };
+
+    const handleRingClick = () => {
+        // Removed date check to allow testing/planning on other days
+        const remCal = settings.goals.cal - stats.cal;
+        const remPro = settings.goals.pro - stats.pro;
+        
+        // Lowered threshold to ensure it opens even for small amounts
+        if (remCal > 0 || remPro > 0) {
+            setShowSuggestion(true);
+        }
     };
 
     // --- Render Helpers ---
@@ -510,6 +580,7 @@ function App() {
                             type="cal"
                             label={stats.cal.toString()} 
                             subLabel="kcal"
+                            onClick={handleRingClick}
                         />
                     )}
                     {showPro && (
@@ -520,6 +591,7 @@ function App() {
                             type="pro"
                             label={stats.pro.toString()} 
                             subLabel="protein"
+                            onClick={handleRingClick}
                         />
                     )}
                 </div>
@@ -693,6 +765,16 @@ function App() {
                 onClose={() => setShowFoodCalculator(false)}
                 mode={settings.mode}
                 onApply={handleApplyFoodCalculation}
+            />
+
+            <SuggestionModal 
+                isOpen={showSuggestion} 
+                onClose={() => setShowSuggestion(false)}
+                onLogSuggestions={handleLogSuggestions}
+                remainingCal={settings.goals.cal - stats.cal}
+                remainingPro={settings.goals.pro - stats.pro}
+                presets={presets}
+                mode={settings.mode}
             />
         </div>
     );
