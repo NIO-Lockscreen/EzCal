@@ -21,11 +21,11 @@ const ProgressRing: React.FC<ProgressRingProps> = ({ radius, stroke, progress, t
     const glowColor = type === 'cal' ? 'rgba(255, 126, 95, 0.5)' : 'rgba(118, 75, 162, 0.5)';
 
     return (
-        <div className="relative flex flex-col items-center justify-center">
+        <div className="relative flex flex-col items-center justify-center transition-all">
             <svg
                 height={radius * 2}
                 width={radius * 2}
-                className="transform -rotate-90 overflow-visible"
+                className="transform -rotate-90 overflow-visible relative z-10"
             >
                 <defs>
                     {type === 'cal' ? (
@@ -78,11 +78,15 @@ const ProgressRing: React.FC<ProgressRingProps> = ({ radius, stroke, progress, t
                     className="transition-[stroke-dashoffset] duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                 />
             </svg>
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center flex flex-col items-center justify-center">
-                <span className={`block text-xl font-black ${type === 'cal' ? 'text-orange-500' : 'text-indigo-600'}`}>
-                    {label}
-                </span>
-                <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest opacity-80 mt-0.5">{subLabel}</span>
+            
+            {/* Inner Content */}
+            <div className="absolute inset-0 flex items-center justify-center z-20">
+                <div className="text-center flex flex-col items-center justify-center relative">
+                    <span className={`block text-xl font-black ${type === 'cal' ? 'text-orange-500' : 'text-indigo-600'} relative z-30 drop-shadow-sm`}>
+                        {label}
+                    </span>
+                    <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest opacity-80 mt-0.5 relative z-30">{subLabel}</span>
+                </div>
             </div>
         </div>
     );

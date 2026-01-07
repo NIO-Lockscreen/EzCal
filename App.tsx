@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { LogEntry, Settings, Preset, AppData } from './types';
-import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark } from './components/Icons';
+import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark, Calculator } from './components/Icons';
 import ProgressRing from './components/ProgressRing';
 import SettingsModal from './components/SettingsModal';
 import PresetsModal from './components/PresetsModal';
@@ -11,6 +11,7 @@ import CalendarModal from './components/CalendarModal';
 import BackupReminderModal from './components/BackupReminderModal';
 import Confetti from './components/Confetti';
 import InstallPrompt from './components/InstallPrompt';
+import FoodCalculatorModal from './components/FoodCalculatorModal';
 
 // FIX: Use local time construction to prevent timezone shifting (UTC vs Local)
 const formatDateKey = (date: Date) => {
@@ -55,6 +56,7 @@ function App() {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showCalendar, setShowCalendar] = useState(false);
     const [showBackupReminder, setShowBackupReminder] = useState(false);
+    const [showFoodCalculator, setShowFoodCalculator] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
     
     // Logic State
@@ -263,13 +265,10 @@ function App() {
 
         if (cleanCal === 0 && cleanPro === 0) return;
 
-        // Check for celebration (Only triggers if adding data to TODAY)
+        // 1. Check for Celebration (Goal Met Today)
         if (isToday) {
             const currentPro = stats.pro;
             const goalPro = settings.goals.pro;
-            
-            // Celebration Trigger: previously under goal, now met/exceeded
-            // AND ensure we haven't already celebrated this session/day logic
             if (!hasCelebrated && currentPro < goalPro && (currentPro + cleanPro) >= goalPro) {
                 setShowConfetti(true);
                 setHasCelebrated(true);
@@ -336,6 +335,11 @@ function App() {
     const handleSelectPreset = (preset: Preset) => {
         handleAdd(preset.cal, preset.pro, preset.label);
         setShowPresets(false);
+    };
+
+    const handleApplyFoodCalculation = (c: number, p: number) => {
+        // Log immediately instead of putting in input fields
+        handleAdd(c, p);
     };
 
     const changeDate = (days: number) => {
@@ -552,12 +556,22 @@ function App() {
                         </button>
                     </div>
                 </div>
-                 <button 
-                    onClick={() => setShowPresets(true)}
-                    className="mt-3 w-full py-2 flex items-center justify-center gap-2 text-sm font-semibold text-gray-500 hover:text-accent transition"
-                >
-                    <BookOpen className="w-4 h-4" /> Use Saved Meal
-                </button>
+                
+                {/* Secondary Actions Grid */}
+                <div className="mt-3 flex gap-3">
+                     <button 
+                        onClick={() => setShowPresets(true)}
+                        className="flex-1 py-3 px-2 flex items-center justify-center gap-2 text-sm font-semibold text-gray-500 hover:text-accent hover:bg-white/50 rounded-2xl transition"
+                    >
+                        <BookOpen className="w-4 h-4" /> Use Saved Meal
+                    </button>
+                    <button 
+                        onClick={() => setShowFoodCalculator(true)}
+                        className="flex-1 py-3 px-2 flex items-center justify-center gap-2 text-sm font-semibold text-gray-500 hover:text-accent hover:bg-white/50 rounded-2xl transition"
+                    >
+                        <Calculator className="w-4 h-4" /> Calculate
+                    </button>
+                </div>
             </div>
 
             {/* History */}
@@ -672,6 +686,13 @@ function App() {
                 onSelectDate={handleDateSelect}
                 history={history}
                 goals={settings.goals}
+            />
+
+            <FoodCalculatorModal 
+                isOpen={showFoodCalculator}
+                onClose={() => setShowFoodCalculator(false)}
+                mode={settings.mode}
+                onApply={handleApplyFoodCalculation}
             />
         </div>
     );
