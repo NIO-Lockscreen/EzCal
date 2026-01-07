@@ -77,7 +77,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 const json = JSON.parse(event.target?.result as string);
                 // Basic validation
                 if (json && (json.history || json.settings || json.presets)) {
-                    if (window.confirm("Importing this data will overwrite your current history, settings, and presets. Are you sure?")) {
+                    if (window.confirm("Importing will merge this data with your current library. Existing items may be updated. Continue?")) {
                         if (onImportData) {
                             onImportData(json as AppData);
                             onClose();

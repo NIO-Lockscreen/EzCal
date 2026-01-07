@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Preset, TrackingMode } from '../types';
 import { X, Flame } from './Icons';
 
@@ -29,6 +29,9 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
 }) => {
     const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    
+    // Track the signature of the currently displayed suggestion to avoid repeating it immediately
+    const lastSignatureRef = useRef<string>('');
 
     // Derived totals based on SELECTED items
     const totals = useMemo(() => {
@@ -48,8 +51,10 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
     // Penalties
     const PENALTY_PER_CAL_OVER = 10;
     const PENALTY_PER_CAL_OVER_SQ = 0.05;
-    const PENALTY_MISSED_PRO = 50;
-    const PENALTY_DUPLICATE = 200;
+    const PENALTY_MISSED_PRO = 30;
+    const PENALTY_DUPLICATE_2 = 300; // Penalty for using the same item twice
+    const PENALTY_DUPLICATE_3_PLUS = 5000; // Huge penalty for using the same item 3+ times
+    const PENALTY_SAME_AS_LAST = 10000; // Force variety on regenerate
     
     const generate = () => {
         setIsLoading(true);
@@ -62,17 +67,16 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
             }
 
             // --- PRE-PROCESSING ---
+            // Create a pool. No need to sort if we pick randomly, but we calculate efficiency for heuristics.
             const pool = presets.map(p => ({
                 ...p,
                 efficiency: p.pro / (p.cal || 1)
             }));
 
-            pool.sort((a, b) => b.efficiency - a.efficiency);
-
             let bestCombo: Preset[] = [];
             let bestScore = Infinity;
 
-            const ITERATIONS = 3000;
+            const ITERATIONS = 5000; // Increased iterations for better variety search
 
             for (let i = 0; i < ITERATIONS; i++) {
                 const currentCombo: Preset[] = [];
@@ -81,31 +85,53 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                 const counts: Record<string, number> = {};
 
                 let attempts = 0;
-                while (attempts < 20 && currentCombo.length < 15) {
+                // Limit chain length to avoid infinite loops, but allow enough items
+                while (attempts < 30 && currentCombo.length < 15) {
                     attempts++;
 
                     const needCal = remainingCal - currentCal;
                     const needPro = remainingPro - currentPro;
 
+                    // Stop conditions
                     if (mode !== 'cal' && needPro <= 0 && currentCal >= (remainingCal - CAL_TOLERANCE_LOWER)) break;
                     if (mode !== 'pro' && Math.abs(needCal) <= CAL_TOLERANCE_UPPER) break;
                     if (currentCal > remainingCal + MAX_OVERAGE_HARD) break;
 
+                    // Heuristics for selection
                     const urgencyPro = Math.max(0, needPro);
                     const budgetCal = Math.max(50, needCal);
                     const targetEfficiency = urgencyPro / budgetCal;
 
                     let candidate = pool[Math.floor(Math.random() * pool.length)];
                     
+                    // 1. Efficiency check: if we desperately need protein, try to pick efficient items
                     if (targetEfficiency > 0.1 && candidate.efficiency < 0.05) {
-                        candidate = pool[Math.floor(Math.random() * pool.length)];
+                        // 50% chance to reroll to find something better
+                         if (Math.random() > 0.5) {
+                            candidate = pool[Math.floor(Math.random() * pool.length)];
+                         }
                     }
 
+                    // 2. Variety check: if we already have this item, try hard to pick something else
+                    if (counts[candidate.id] && counts[candidate.id] >= 1) {
+                         // 80% chance to reroll if we already have 1 of these
+                         if (Math.random() > 0.2) {
+                            candidate = pool[Math.floor(Math.random() * pool.length)];
+                         }
+                    }
+
+                    // Hard stop on 3x of same item during generation to prevent wasting compute on bad combos
+                    if ((counts[candidate.id] || 0) >= 2) {
+                         // If we are about to add a 3rd, try one last reroll guaranteed unique from current selection context if possible
+                         // (Simplified: just reroll once random)
+                         candidate = pool[Math.floor(Math.random() * pool.length)];
+                         if ((counts[candidate.id] || 0) >= 2) continue; // Skip if still bad
+                    }
+
+                    // Overage check
                     if (currentCombo.length > 0 && (currentCal + candidate.cal > remainingCal + MAX_OVERAGE_HARD)) {
                         continue; 
                     }
-                    
-                    if ((counts[candidate.id] || 0) >= 10) continue;
 
                     currentCombo.push(candidate);
                     currentCal += candidate.cal;
@@ -115,15 +141,18 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
 
                 if (currentCombo.length === 0) continue;
 
+                // --- SCORING ---
                 let score = 0;
                 const finalCal = currentCal;
                 const finalPro = currentPro;
 
+                // 1. Protein Goal
                 const missingPro = Math.max(0, remainingPro - finalPro);
                 if (mode !== 'cal') {
                     score += missingPro * PENALTY_MISSED_PRO;
                 }
 
+                // 2. Calorie Goal
                 const diffCal = finalCal - remainingCal;
                 if (diffCal > 0) {
                     score += (diffCal * PENALTY_PER_CAL_OVER) + (Math.pow(diffCal, 2) * PENALTY_PER_CAL_OVER_SQ);
@@ -131,9 +160,18 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                     score += Math.abs(diffCal) * 2; 
                 }
 
-                const uniqueItems = new Set(currentCombo.map(i => i.id)).size;
-                const duplicateCount = currentCombo.length - uniqueItems;
-                score += duplicateCount * PENALTY_DUPLICATE;
+                // 3. Variety / Duplicates
+                Object.values(counts).forEach(count => {
+                    if (count === 2) score += PENALTY_DUPLICATE_2;
+                    if (count >= 3) score += PENALTY_DUPLICATE_3_PLUS * (count - 2);
+                });
+                
+                // 4. Repetition Penalty (Regenerate Variety)
+                // Sort IDs to create a signature independent of order
+                const currentSig = currentCombo.map(i => i.id).sort().join('|');
+                if (currentSig === lastSignatureRef.current) {
+                    score += PENALTY_SAME_AS_LAST;
+                }
 
                 if (currentCombo.length === 0) score = Infinity;
 
@@ -141,6 +179,11 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                     bestScore = score;
                     bestCombo = currentCombo;
                 }
+            }
+
+            // Save the signature of the best combo so we can avoid it next time
+            if (bestCombo.length > 0) {
+                lastSignatureRef.current = bestCombo.map(i => i.id).sort().join('|');
             }
 
             // Set suggestions with selection state
@@ -169,6 +212,7 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
 
     useEffect(() => {
         if (isOpen) {
+            lastSignatureRef.current = ''; // Reset when opening fresh so we get the absolute best first
             generate();
         }
     }, [isOpen]);

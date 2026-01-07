@@ -390,22 +390,41 @@ function App() {
             throw new Error("Invalid data format");
         }
 
-        const newHistory = Array.isArray(data.history) ? data.history : history;
-        const newPresets = Array.isArray(data.presets) ? data.presets : presets;
-        
-        // Deep merge settings to avoid crashes if partial settings are imported
-        let newSettings = settings;
-        if (data.settings && typeof data.settings === 'object') {
-             newSettings = {
-                ...settings,
-                ...data.settings,
-                goals: {
-                    ...settings.goals,
-                    ...(data.settings.goals || {})
-                }
-            };
-        }
+        // 1. Presets (Always Merge to support adding food lists)
+        const incomingPresets = Array.isArray(data.presets) ? data.presets : [];
+        const existingPresetsMap = new Map(presets.map(p => [p.id, p]));
+        // Add or overwrite presets based on ID
+        incomingPresets.forEach(p => existingPresetsMap.set(p.id, p));
+        const newPresets = Array.from(existingPresetsMap.values());
 
+        // 2. History & Settings (Smart Merge)
+        // If the imported file has history entries, treat it as a "Full Backup" and merge/restore everything.
+        // If history is empty (like in a food list pack), we PRESERVE the user's current history and settings.
+        const incomingHistory = Array.isArray(data.history) ? data.history : [];
+        const isFullBackup = incomingHistory.length > 0;
+
+        let newHistory = history;
+        let newSettings = settings;
+
+        if (isFullBackup) {
+            // Merge History
+            const existingHistoryMap = new Map(history.map(h => [h.id, h]));
+            incomingHistory.forEach(h => existingHistoryMap.set(h.id, h));
+            newHistory = Array.from(existingHistoryMap.values());
+
+            // Merge Settings
+            if (data.settings && typeof data.settings === 'object') {
+                 newSettings = {
+                    ...settings,
+                    ...data.settings,
+                    goals: {
+                        ...settings.goals,
+                        ...(data.settings.goals || {})
+                    }
+                };
+            }
+        }
+        
         setHistory(newHistory);
         setPresets(newPresets);
         setSettings(newSettings);
