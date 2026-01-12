@@ -52,9 +52,11 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
     const PENALTY_PER_CAL_OVER = 10;
     const PENALTY_PER_CAL_OVER_SQ = 0.05;
     const PENALTY_MISSED_PRO = 30;
-    const PENALTY_DUPLICATE_2 = 300; // Penalty for using the same item twice
-    const PENALTY_DUPLICATE_3_PLUS = 5000; // Huge penalty for using the same item 3+ times
-    const PENALTY_SAME_AS_LAST = 10000; // Force variety on regenerate
+    const PENALTY_EXCESS_PRO = 15; // Increased: Penalty per gram of excess protein
+    const PENALTY_EXCESS_PRO_HEAVY = 50; // Heavily increased: Penalty for massive overshoots (>10g)
+    const PENALTY_DUPLICATE_2 = 300; 
+    const PENALTY_DUPLICATE_3_PLUS = 5000;
+    const PENALTY_SAME_AS_LAST = 10000;
     
     const generate = () => {
         setIsLoading(true);
@@ -67,16 +69,25 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
             }
 
             // --- PRE-PROCESSING ---
-            // Create a pool. No need to sort if we pick randomly, but we calculate efficiency for heuristics.
+            // Create a pool with efficiency pre-calculated
             const pool = presets.map(p => ({
                 ...p,
-                efficiency: p.pro / (p.cal || 1)
+                efficiency: p.pro / (Math.max(1, p.cal)) // Protein per 1 calorie
             }));
+
+            // Pre-calculate subsets for faster access
+            // Low Density: < 0.1g protein per kcal (e.g. < 10g pro in 100kcal)
+            const lowDensityPool = pool.filter(p => p.efficiency < 0.12);
+            // Fallback if no specific low density items exist: use the bottom 50%
+            const sortedByDensity = [...pool].sort((a,b) => a.efficiency - b.efficiency);
+            const bottomHalfPool = sortedByDensity.slice(0, Math.max(1, Math.ceil(pool.length / 2)));
+            
+            const effectiveLowDensityPool = lowDensityPool.length > 0 ? lowDensityPool : bottomHalfPool;
 
             let bestCombo: Preset[] = [];
             let bestScore = Infinity;
 
-            const ITERATIONS = 5000; // Increased iterations for better variety search
+            const ITERATIONS = 5000; 
 
             for (let i = 0; i < ITERATIONS; i++) {
                 const currentCombo: Preset[] = [];
@@ -85,7 +96,8 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                 const counts: Record<string, number> = {};
 
                 let attempts = 0;
-                // Limit chain length to avoid infinite loops, but allow enough items
+                
+                // Build a combo
                 while (attempts < 30 && currentCombo.length < 15) {
                     attempts++;
 
@@ -97,38 +109,33 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                     if (mode !== 'pro' && Math.abs(needCal) <= CAL_TOLERANCE_UPPER) break;
                     if (currentCal > remainingCal + MAX_OVERAGE_HARD) break;
 
-                    // Heuristics for selection
-                    const urgencyPro = Math.max(0, needPro);
-                    const budgetCal = Math.max(50, needCal);
-                    const targetEfficiency = urgencyPro / budgetCal;
+                    let candidatePool = pool;
 
-                    let candidate = pool[Math.floor(Math.random() * pool.length)];
+                    // --- INTELLIGENT POOL SELECTION ---
                     
-                    // 1. Efficiency check: if we desperately need protein, try to pick efficient items
-                    if (targetEfficiency > 0.1 && candidate.efficiency < 0.05) {
-                        // 50% chance to reroll to find something better
-                         if (Math.random() > 0.5) {
-                            candidate = pool[Math.floor(Math.random() * pool.length)];
-                         }
+                    // 1. OVERSHOOT PROTECTION / CALORIE FILLING MODE
+                    // If we have met or are very close to protein goal (needPro <= 10g), 
+                    // we STRICTLY switch to the low density pool to fill calories.
+                    if (needPro <= 10) {
+                         candidatePool = effectiveLowDensityPool;
+                    } 
+                    // 2. DENSITY MATCHING
+                    // If we need protein, try to pick items that don't blow the calorie budget relative to protein needs
+                    else {
+                        // If we need HIGH density (lots of protein, few cals), maybe filter out super low density items?
+                        // For now, random selection handles this via scoring, but strict low-density filtering is crucial for the overshoot case.
                     }
 
-                    // 2. Variety check: if we already have this item, try hard to pick something else
-                    if (counts[candidate.id] && counts[candidate.id] >= 1) {
-                         // 80% chance to reroll if we already have 1 of these
-                         if (Math.random() > 0.2) {
-                            candidate = pool[Math.floor(Math.random() * pool.length)];
-                         }
-                    }
-
-                    // Hard stop on 3x of same item during generation to prevent wasting compute on bad combos
+                    // Random Candidate from the selected pool
+                    let candidate = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+                    
+                    // 3. Variety Check (Hard constraint on 3rd duplicate)
                     if ((counts[candidate.id] || 0) >= 2) {
-                         // If we are about to add a 3rd, try one last reroll guaranteed unique from current selection context if possible
-                         // (Simplified: just reroll once random)
-                         candidate = pool[Math.floor(Math.random() * pool.length)];
-                         if ((counts[candidate.id] || 0) >= 2) continue; // Skip if still bad
+                         candidate = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+                         if ((counts[candidate.id] || 0) >= 2) continue; 
                     }
 
-                    // Overage check
+                    // 4. Hard Overage Check
                     if (currentCombo.length > 0 && (currentCal + candidate.cal > remainingCal + MAX_OVERAGE_HARD)) {
                         continue; 
                     }
@@ -150,6 +157,17 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                 const missingPro = Math.max(0, remainingPro - finalPro);
                 if (mode !== 'cal') {
                     score += missingPro * PENALTY_MISSED_PRO;
+                    
+                    // NEW: Penalty for Excess Protein
+                    const excessPro = Math.max(0, finalPro - remainingPro);
+                    if (excessPro > 0) {
+                        // Base penalty for going over
+                        score += excessPro * PENALTY_EXCESS_PRO;
+                        // Heavy penalty for significant overshoots (>10g over)
+                        if (excessPro > 10) {
+                            score += (excessPro - 10) * PENALTY_EXCESS_PRO_HEAVY;
+                        }
+                    }
                 }
 
                 // 2. Calorie Goal
@@ -167,7 +185,6 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                 });
                 
                 // 4. Repetition Penalty (Regenerate Variety)
-                // Sort IDs to create a signature independent of order
                 const currentSig = currentCombo.map(i => i.id).sort().join('|');
                 if (currentSig === lastSignatureRef.current) {
                     score += PENALTY_SAME_AS_LAST;
@@ -181,12 +198,11 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
                 }
             }
 
-            // Save the signature of the best combo so we can avoid it next time
+            // Save signature
             if (bestCombo.length > 0) {
                 lastSignatureRef.current = bestCombo.map(i => i.id).sort().join('|');
             }
 
-            // Set suggestions with selection state
             setSuggestions(bestCombo.map((item, idx) => ({
                 item,
                 selected: true,
@@ -212,7 +228,7 @@ const SuggestionModal: React.FC<SuggestionModalProps> = ({
 
     useEffect(() => {
         if (isOpen) {
-            lastSignatureRef.current = ''; // Reset when opening fresh so we get the absolute best first
+            lastSignatureRef.current = ''; 
             generate();
         }
     }, [isOpen]);
