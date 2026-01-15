@@ -142,8 +142,11 @@ function App() {
                 }
             }
 
-            // 2. Recalculate Reminder (15+ meals logged & once per month)
-            if (history.length >= 15) {
+            // 2. Recalculate Reminder (15+ unique days logged & only at start of month)
+            const uniqueDaysLogged = new Set(history.map(h => h.date)).size;
+            const isStartOfMonth = now.getDate() <= 5; // Only trigger in the first 5 days
+
+            if (uniqueDaysLogged >= 15 && isStartOfMonth) {
                 const lastRecalcShown = localStorage.getItem('simplycal_recalc_reminder_seen');
                 if (lastRecalcShown !== currentMonthKey) {
                     setShowRecalculateReminder(true);
