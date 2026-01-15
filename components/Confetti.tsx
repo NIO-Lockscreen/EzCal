@@ -24,7 +24,8 @@ const Confetti: React.FC<ConfettiProps> = ({ onComplete }) => {
         // Theme colors: Accent (Orange), Protein (Purple), Gold, Blue
         const colors = ['#FF7E5F', '#764BA2', '#FBBF24', '#667EEA'];
         
-        const particleCount = 150;
+        // Reduced particle count for better performance on mobile devices
+        const particleCount = 80;
         // Store particles
         const particles: any[] = [];
 

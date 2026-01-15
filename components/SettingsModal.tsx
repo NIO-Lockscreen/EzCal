@@ -10,7 +10,7 @@ interface SettingsModalProps {
     onSave: (newSettings: Settings) => void;
     history?: LogEntry[];
     presets?: Preset[];
-    onImportData?: (data: AppData) => void;
+    onImportData?: (data: AppData, mode: 'full' | 'presets_only') => void;
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
@@ -26,6 +26,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const [pro, setPro] = useState(settings.goals.pro.toString());
     const [mode, setMode] = useState<TrackingMode>(settings.mode);
     const [showCalculator, setShowCalculator] = useState(false);
+    
+    // State for Import Decision UI
+    const [importData, setImportData] = useState<{
+        data: AppData;
+        summary: { history: number; presets: number; hasSettings: boolean };
+    } | null>(null);
 
     if (!isOpen) return null;
 
@@ -75,18 +81,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         reader.onload = (event) => {
             try {
                 const json = JSON.parse(event.target?.result as string);
-                // Basic validation
-                if (json && (json.history || json.settings || json.presets)) {
-                    if (window.confirm("Importing will merge this data with your current library. Existing items may be updated. Continue?")) {
-                        if (onImportData) {
-                            onImportData(json as AppData);
-                            onClose();
-                            alert("Data imported successfully!");
-                        }
-                    }
-                } else {
-                    alert("Invalid backup file format.");
+                
+                // Validate content
+                const historyCount = Array.isArray(json.history) ? json.history.length : 0;
+                const presetsCount = Array.isArray(json.presets) ? json.presets.length : 0;
+                const hasSettings = !!json.settings;
+
+                if (historyCount === 0 && presetsCount === 0 && !hasSettings) {
+                    alert("Invalid file: No recognizable data found.");
+                    return;
                 }
+
+                // Show decision UI
+                setImportData({
+                    data: json,
+                    summary: { history: historyCount, presets: presetsCount, hasSettings }
+                });
+
             } catch (err: any) {
                 console.error(err);
                 alert("Failed to import: " + (err.message || "Unknown error"));
@@ -96,6 +107,62 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         };
         reader.readAsText(file);
     };
+
+    const confirmImport = (importMode: 'full' | 'presets_only') => {
+        if (!importData || !onImportData) return;
+        
+        try {
+            onImportData(importData.data, importMode);
+            setImportData(null);
+            onClose();
+        } catch (e: any) {
+            console.error(e);
+            alert("Error importing data. Please try again.");
+        }
+    };
+
+    // If import confirmation is pending, show that UI instead of settings
+    if (importData) {
+        return (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
+                <div className="bg-white/95 backdrop-blur-xl p-6 rounded-3xl shadow-2xl w-full max-w-sm animate-pop-in">
+                   <h3 className="text-xl font-bold text-gray-800 mb-2">Import Backup</h3>
+                   <p className="text-gray-600 mb-6 text-sm leading-relaxed">
+                       File contains <strong className="text-gray-900">{importData.summary.history} history items</strong> and <strong className="text-gray-900">{importData.summary.presets} saved meals</strong>.
+                   </p>
+                   
+                   <div className="space-y-3">
+                       {/* Option 1: Full Restore (only if history exists) */}
+                       {importData.summary.history > 0 && (
+                           <button 
+                               onClick={() => confirmImport('full')}
+                               className="w-full py-3.5 bg-black text-white rounded-2xl font-bold text-sm hover:scale-[1.02] active:scale-95 transition shadow-lg"
+                           >
+                               Restore Full Backup
+                           </button>
+                       )}
+                       
+                       {/* Option 2: Presets Only (only if presets exist) */}
+                       {importData.summary.presets > 0 && (
+                           <button 
+                               onClick={() => confirmImport('presets_only')}
+                               className="w-full py-3.5 bg-indigo-50 text-indigo-600 rounded-2xl font-bold text-sm hover:bg-indigo-100 active:scale-95 transition"
+                           >
+                               Import {importData.summary.presets} Saved Meals Only
+                           </button>
+                       )}
+
+                       <button 
+                           onClick={() => setImportData(null)}
+                           className="w-full py-3 text-gray-500 font-bold text-sm hover:bg-gray-100 rounded-2xl transition"
+                       >
+                           Cancel
+                       </button>
+                   </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>
