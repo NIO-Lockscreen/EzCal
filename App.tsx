@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { LogEntry, Settings, Preset, AppData } from './types';
-import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark, Calculator, Dumbbell } from './components/Icons';
+import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark, Calculator, Dumbbell, Lock } from './components/Icons';
 import ProgressRing from './components/ProgressRing';
 import SettingsModal from './components/SettingsModal';
 import PresetsModal from './components/PresetsModal';
@@ -16,6 +16,7 @@ import SuggestionModal from './components/SuggestionModal';
 import DebugMenu from './components/DebugMenu';
 import RecalculateReminderModal from './components/RecalculateReminderModal';
 import CalculatorModal from './components/CalculatorModal';
+import DoorAccessModal from './components/DoorAccessModal';
 
 // FIX: Use local time construction to prevent timezone shifting (UTC vs Local)
 const formatDateKey = (date: Date) => {
@@ -68,6 +69,7 @@ function App() {
     const [showDebugMenu, setShowDebugMenu] = useState(false);
     const [showRecalculateReminder, setShowRecalculateReminder] = useState(false);
     const [showStandaloneCalculator, setShowStandaloneCalculator] = useState(false);
+    const [showDoorModal, setShowDoorModal] = useState(false);
     
     // Logic State
     const [hasCelebrated, setHasCelebrated] = useState(false);
@@ -564,15 +566,23 @@ function App() {
                 <div className="flex items-center gap-2">
                     {/* Feature for 'Davis': Link to LiftLog */}
                     {settings.name?.toLowerCase().trim() === 'davis' && (
-                        <a 
-                            href="https://liftlog-davis.vercel.app/" 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="p-3 bg-white/50 rounded-2xl hover:bg-white transition shadow-sm active:scale-95 text-gray-700"
-                            aria-label="Open LiftLog"
-                        >
-                            <Dumbbell className="w-6 h-6" />
-                        </a>
+                        <>
+                            <a 
+                                href="https://liftlog-davis.vercel.app/" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="p-3 bg-white/50 rounded-2xl hover:bg-white transition shadow-sm active:scale-95 text-gray-700"
+                                aria-label="Open LiftLog"
+                            >
+                                <Dumbbell className="w-6 h-6" />
+                            </a>
+                            <button 
+                                onClick={() => setShowDoorModal(true)}
+                                className="p-3 bg-white/50 rounded-2xl hover:bg-white transition shadow-sm active:scale-95 text-gray-700"
+                            >
+                                <Lock className="w-6 h-6" />
+                            </button>
+                        </>
                     )}
                     
                     <button 
@@ -842,6 +852,11 @@ function App() {
                 remainingPro={settings.goals.pro - stats.pro}
                 presets={presets}
                 mode={settings.mode}
+            />
+
+            <DoorAccessModal 
+                isOpen={showDoorModal} 
+                onClose={() => setShowDoorModal(false)} 
             />
         </div>
     );
