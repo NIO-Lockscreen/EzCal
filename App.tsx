@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { LogEntry, Settings, Preset, AppData } from './types';
-import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark, Calculator } from './components/Icons';
+import { ChevronLeft, ChevronRight, SettingsIcon, BookOpen, Trash2, Bookmark, Calculator, Dumbbell } from './components/Icons';
 import ProgressRing from './components/ProgressRing';
 import SettingsModal from './components/SettingsModal';
 import PresetsModal from './components/PresetsModal';
@@ -85,8 +85,10 @@ function App() {
                 if (parsed.history) setHistory(parsed.history);
                 if (parsed.presets) setPresets(parsed.presets);
                 if (parsed.settings) {
-                    setSettings(parsed.settings);
+                    // Merge with DEFAULT_SETTINGS to ensure new fields (like name) are not lost if missing in old data
+                    setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
                 } else if (parsed.goals) {
+                    // Legacy migration
                     setSettings({ ...DEFAULT_SETTINGS, goals: parsed.goals });
                 }
             } catch (e) {
@@ -554,12 +556,28 @@ function App() {
                         </button>
                     </div>
                 </div>
-                <button 
-                    onClick={() => setShowSettings(true)} 
-                    className="p-3 bg-white/50 rounded-2xl hover:bg-white transition shadow-sm active:scale-95"
-                >
-                    <SettingsIcon className="text-gray-700 w-6 h-6" />
-                </button>
+                
+                <div className="flex items-center gap-2">
+                    {/* Feature for 'Davis': Link to LiftLog */}
+                    {settings.name?.toLowerCase().trim() === 'davis' && (
+                        <a 
+                            href="https://liftlog-davis.vercel.app/" 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="p-3 bg-white/50 rounded-2xl hover:bg-white transition shadow-sm active:scale-95 text-gray-700"
+                            aria-label="Open LiftLog"
+                        >
+                            <Dumbbell className="w-6 h-6" />
+                        </a>
+                    )}
+                    
+                    <button 
+                        onClick={() => setShowSettings(true)} 
+                        className="p-3 bg-white/50 rounded-2xl hover:bg-white transition shadow-sm active:scale-95"
+                    >
+                        <SettingsIcon className="text-gray-700 w-6 h-6" />
+                    </button>
+                </div>
             </header>
 
             {/* Stats Card */}
