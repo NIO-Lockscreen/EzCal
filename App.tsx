@@ -110,7 +110,11 @@ function App() {
     // --- Keyboard Listeners (Debug) ---
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key.toLowerCase() === 'd') {
+            const target = e.target as HTMLElement;
+            // Prevent debug menu toggle if user is typing in an input
+            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+            
+            if (!isInput && e.key.toLowerCase() === 'd') {
                 setShowDebugMenu(prev => !prev);
             }
         };
