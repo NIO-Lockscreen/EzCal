@@ -53,3 +53,15 @@ export const Flame = ({ className, filled }: { className?: string, filled?: bool
 export const Search = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
 );
+
+export const Dumbbell = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="m6.5 6.5 11 11"/>
+        <path d="m21 21-1-1"/>
+        <path d="m3 3 1 1"/>
+        <path d="m18 22 4-4"/>
+        <path d="m2 6 4-4"/>
+        <path d="m3 10 7-7"/>
+        <path d="m14 21 7-7"/>
+    </svg>
+);
