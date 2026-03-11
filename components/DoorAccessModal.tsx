@@ -49,28 +49,14 @@ const DoorAccessModal: React.FC<DoorAccessModalProps> = ({ isOpen, onClose }) =>
 
         setStatus('processing');
         setShowTokenInput(false);
-        
-        // 1. Target URL - Append token to URL as fallback for APIs that don't check body
-        const targetUrl = `https://crm.nidaro.no/api/member/checkin?MemberSessionToken=${token}`;
-        
-        // 2. Wrap with CORS Proxy to bypass browser "Network Error"
-        const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
-        
-        // 3. Add token to body as well
-        const payload = new URLSearchParams({
-            "ActorUUID": "f53ee762-3cc7-4929-a062-21304e993c25", 
-            "InstanceUUID": "8c5553c6097149099bb9d66534977262", 
-            "Location": "2",
-            "MemberSessionToken": token 
-        });
 
         try {
-            const response = await fetch(proxyUrl, {
+            const response = await fetch('/api/door', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/json',
                 },
-                body: payload
+                body: JSON.stringify({ token })
             });
 
             if (response.ok) {
@@ -89,7 +75,7 @@ const DoorAccessModal: React.FC<DoorAccessModalProps> = ({ isOpen, onClose }) =>
         } catch (error) {
             console.error("Network error:", error);
             setStatus('error');
-            setStatusMessage('Network Error (Proxy Failed)');
+            setStatusMessage('Network Error (API Failed)');
         }
     };
 
